@@ -1,4 +1,4 @@
-aws
-*.o
-utils/*.o
-http-parser/*o
+/aws
+/*.o
+/utils/*.o
+/http-parser/*.o

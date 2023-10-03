@@ -42,23 +42,21 @@ static int aws_on_path_cb(http_parser *p, const char *buf, size_t len)
 	return 0;
 }
 
-static void prepare_connection_send_reply_header(struct connection *conn)
+static void connection_prepare_send_reply_header(struct connection *conn)
 {
 	/* TODO: Prepare the connection buffer to send the reply header. */
 }
 
-static void prepare_connection_send_404(struct connection *conn)
+static void connection_prepare_send_404(struct connection *conn)
 {
 	/* TODO: Prepare the connection buffer to send the 404 header. */
 }
 
 static enum resource_type connection_get_resource_type(struct connection *conn)
 {
-	/*
-	 * TODO: Get resource type depending on request path/filename. Filename should
+	/* TODO: Get resource type depending on request path/filename. Filename should
 	 * point to the static or dynamic folder.
 	 */
-
 	return RESOURCE_TYPE_NONE;
 }
 
@@ -66,7 +64,6 @@ static enum resource_type connection_get_resource_type(struct connection *conn)
 struct connection *connection_create(int sockfd)
 {
 	/* TODO: Initialize connection structure on given socket. */
-
 	return NULL;
 }
 
@@ -77,28 +74,25 @@ void connection_start_async_io(struct connection *conn)
 	 */
 }
 
-
 void connection_remove(struct connection *conn)
 {
 	/* TODO: Remove connection handler. */
 }
 
-
 void handle_new_connection(void)
 {
 	/* TODO: Handle a new connection request on the server socket. */
 
-	/* TODO a: Accept new connection. */
+	/* TODO: Accept new connection. */
 
-	/* TODO b: Set socket to be non-blocking. */
+	/* TODO: Set socket to be non-blocking. */
 
-	/* TODO c: Instantiate new connection handler. */
+	/* TODO: Instantiate new connection handler. */
 
-	/* TODO d: Add socket to epoll. */
+	/* TODO: Add socket to epoll. */
 
-	/* TODO e: Initialize HTTP_REQUEST parser. */
+	/* TODO: Initialize HTTP_REQUEST parser. */
 }
-
 
 void receive_data(struct connection *conn)
 {
@@ -111,7 +105,7 @@ int connection_open_file(struct connection *conn)
 {
 	/* TODO: Open file and update connection fields. */
 
-	return 0;
+	return -1;
 }
 
 void connection_complete_async_io(struct connection *conn)
@@ -124,7 +118,6 @@ void connection_complete_async_io(struct connection *conn)
 int parse_header(struct connection *conn)
 {
 	/* TODO: Parse the HTTP header and extract the file path. */
-
 	/* Use mostly null settings except for on_path callback. */
 	http_parser_settings settings_on_path = {
 		.on_message_begin = 0,
@@ -138,26 +131,22 @@ int parse_header(struct connection *conn)
 		.on_headers_complete = 0,
 		.on_message_complete = 0
 	};
-
 	return 0;
 }
 
 enum connection_state connection_send_static(struct connection *conn)
 {
 	/* TODO: Send static data using sendfile(2). */
-	/* Return value is the state of the connection at the time this function reaches the end. */
-
 	return STATE_NO_STATE;
 }
 
 int connection_send_data(struct connection *conn)
 {
-	/* May be used as a helper function.
-	 * TODO: Send as much data as possible from the connection send buffer.
+	/* May be used as a helper function. */
+	/* TODO: Send as much data as possible from the connection send buffer.
 	 * Returns the number of bytes sent or -1 if an error occurred
 	 */
-
-	return 0;
+	return -1;
 }
 
 
@@ -166,7 +155,6 @@ int connection_send_dynamic(struct connection *conn)
 	/* TODO: Read data asynchronously.
 	 * Returns 0 on success and -1 on error.
 	 */
-
 	return 0;
 }
 
@@ -179,8 +167,7 @@ void handle_input(struct connection *conn)
 
 	switch (conn->state) {
 	default:
-		ERR("Unexpected state\n");
-		exit(1);
+		printf("shouldn't get here %d\n", conn->state);
 	}
 }
 
@@ -206,6 +193,8 @@ void handle_client(uint32_t event, struct connection *conn)
 
 int main(void)
 {
+	int rc;
+
 	/* TODO: Initialize asynchronous operations. */
 
 	/* TODO: Initialize multiplexing. */
@@ -223,13 +212,10 @@ int main(void)
 
 		/* TODO: Wait for events. */
 
-		/*
-		 * TODO: Switch event types; consider
+		/* TODO: Switch event types; consider
 		 *   - new connection requests (on server socket)
 		 *   - socket communication (on connection sockets)
 		 */
-
-		switch (rev.data.fd) { }
 	}
 
 	return 0;
