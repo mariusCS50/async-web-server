@@ -23,7 +23,7 @@ DEBUG_=0
 
 DEBUG()
 {
-    if test "x$DEBUG_" = "x1"; then
+    if test "$DEBUG_" = "1"; then
         "$@" 1>&2
     fi
 }
@@ -80,7 +80,7 @@ test_do_fail()
 {
     points=$1
     printf "failed  [ 0/%02d]\n" $max_points
-    if test "x$EXIT_IF_FAIL" = "x1"; then
+    if test "$EXIT_IF_FAIL" = "1"; then
         exit 1
     fi
 }
