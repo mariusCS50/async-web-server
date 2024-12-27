@@ -63,8 +63,15 @@ static enum resource_type connection_get_resource_type(struct connection *conn)
 
 struct connection *connection_create(int sockfd)
 {
-	/* TODO: Initialize connection structure on given socket. */
-	return NULL;
+	struct connection *conn = malloc(sizeof(*conn));
+
+	DIE(conn == NULL, "malloc");
+
+	conn->sockfd = sockfd;
+	memset(conn->recv_buffer, 0, BUFSIZ);
+	memset(conn->send_buffer, 0, BUFSIZ);
+
+	return conn;
 }
 
 void connection_start_async_io(struct connection *conn)
@@ -81,17 +88,30 @@ void connection_remove(struct connection *conn)
 
 void handle_new_connection(void)
 {
-	/* TODO: Handle a new connection request on the server socket. */
+	/* Handle a new connection request on the server socket. */
+	static int sockfd;
+	socklen_t addrlen = sizeof(struct sockaddr_in);
+	struct sockaddr_in addr;
+	struct connection *conn;
+	int rc;
 
-	/* TODO: Accept new connection. */
+	/* Accept new connection. */
+	sockfd = accept(listenfd, (SSA *) &addr, &addrlen);
+	DIE(sockfd == -1, "accept() error");
 
-	/* TODO: Set socket to be non-blocking. */
+	/* Set socket to be non-blocking. */
+	fcntl(sockfd, F_SETFL, O_NONBLOCK);
+	DIE(sockfd == -1, "fcntl() error");
 
-	/* TODO: Instantiate new connection handler. */
+	/* Instantiate new connection handler. */
+	conn = connection_create(sockfd);
 
-	/* TODO: Add socket to epoll. */
+	/* Add socket to epoll. */
+	rc = w_epoll_add_ptr_in(epollfd, sockfd, conn);
+	DIE(rc == -1, "w_epoll_add_in() error");
 
-	/* TODO: Initialize HTTP_REQUEST parser. */
+	/* Initialize HTTP_REQUEST parser. */
+	http_parser_init(&conn->request_parser, HTTP_REQUEST);
 }
 
 void receive_data(struct connection *conn)
@@ -197,11 +217,17 @@ int main(void)
 
 	/* TODO: Initialize asynchronous operations. */
 
-	/* TODO: Initialize multiplexing. */
+	/* Initialize multiplexing. */
+	epollfd = w_epoll_create();
+	DIE(epollfd == -1, "w_epoll_create() error");
 
-	/* TODO: Create server socket. */
+	/* Create server socket. */
+	listenfd = tcp_create_listener(AWS_LISTEN_PORT, DEFAULT_LISTEN_BACKLOG);
+	DIE(listenfd == -1, "tcp_create_listener() error");
 
-	/* TODO: Add server socket to epoll object*/
+	/* Add server socket to epoll object*/
+	rc = w_epoll_add_fd_in(epollfd, listenfd);
+	DIE(rc == -1, "w_epoll_add_fd_in() error");
 
 	/* Uncomment the following line for debugging. */
 	// dlog(LOG_INFO, "Server waiting for connections on port %d\n", AWS_LISTEN_PORT);
@@ -210,12 +236,27 @@ int main(void)
 	while (1) {
 		struct epoll_event rev;
 
-		/* TODO: Wait for events. */
+		/* Wait for events. */
+		rc = w_epoll_wait_infinite(epollfd, &rev);
+		DIE(rc == -1, "w_epoll_wait_infinite() error");
 
-		/* TODO: Switch event types; consider
+		/* Switch event types; consider
 		 *   - new connection requests (on server socket)
 		 *   - socket communication (on connection sockets)
 		 */
+
+		if (rev.data.fd == listenfd) {
+			dlog(LOG_DEBUG, "New connection\n");
+			if (rev.events & EPOLLIN)
+				handle_new_connection();
+		} else {
+			if (rev.events & EPOLLIN) {
+				dlog(LOG_DEBUG, "New message\n");
+			}
+			if (rev.events & EPOLLOUT) {
+				dlog(LOG_DEBUG, "Ready to send message\n");
+			}
+		}
 	}
 
 	return 0;
