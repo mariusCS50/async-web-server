@@ -94,7 +94,7 @@ static enum resource_type connection_get_resource_type(struct connection *conn)
 
 struct connection *connection_create(int sockfd)
 {
-	struct connection *conn = malloc(sizeof(*conn));
+	struct connection *conn = malloc(sizeof(struct connection));
 
 	DIE(conn == NULL, "malloc");
 
@@ -120,8 +120,6 @@ void connection_remove(struct connection *conn)
 {
 	/* Remove connection from epoll and close it */
 	dlog(LOG_DEBUG, "Closing connection\n");
-	int rc = w_epoll_remove_ptr(epollfd, conn->sockfd, conn);
-	DIE(rc == -1, "w_epoll_remove_ptr");
 	if (conn->sockfd)
 		close(conn->sockfd);
 	conn->state = STATE_CONNECTION_CLOSED;
@@ -177,12 +175,9 @@ void receive_data(struct connection *conn)
 	while (1) {
         bytes_recv = recv(conn->sockfd, conn->recv_buffer + total_recieved, BUFSIZ - total_recieved, 0);
         if (bytes_recv < 0) {
-            dlog(LOG_ERR, "Error in communication from: %s\n", abuffer);
-            connection_remove(conn);
-            return conn->state;
-        }
-        if (bytes_recv == 0) {
-            dlog(LOG_INFO, "Connection closed from: %s\n", abuffer);
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+				continue;
+
             connection_remove(conn);
             return conn->state;
         }
@@ -211,7 +206,7 @@ int connection_open_file(struct connection *conn)
 	char full_path[BUFSIZ];
     snprintf(full_path, BUFSIZ, ".%s", conn->request_path);
 
-	dlog(LOG_DEBUG, "Path: %s\n", conn->request_path);
+	// dlog(LOG_DEBUG, "Path: %s\n", conn->request_path);
 
 	if (strcmp(full_path, "./") == 0) {
 		return -1;
@@ -289,22 +284,23 @@ enum connection_state connection_send_static(struct connection *conn)
 
     while (total_sent < conn->file_size) {
         bytes_sent = sendfile(conn->sockfd, conn->fd, &offset, conn->file_size - total_sent);
-        // if (bytes_sent < 0) {
-        //     dlog(LOG_ERR, "Error in communication from: %s\n", abuffer);
-        //     connection_remove(conn);
-        //     return conn->state;
-        // }
-        // if (bytes_sent == 0) {
-        //     dlog(LOG_INFO, "Connection closed from: %s\n", abuffer);
-        //     connection_remove(conn);
-        //     return conn->state;
-        // }
+        if (bytes_sent < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+				continue;
+
+            connection_remove(conn);
+            return conn->state;
+        }
 
         total_sent += bytes_sent;
     }
 
 	dlog(LOG_DEBUG, "File sent\n");
-	return STATE_NO_STATE;
+
+	rc = w_epoll_remove_ptr(epollfd, conn->sockfd, conn);
+	DIE(rc == -1, "w_epoll_remove_ptr() error");
+
+	return STATE_DATA_SENT;
 }
 
 int connection_send_data(struct connection *conn)
@@ -370,12 +366,9 @@ int connection_send_header(struct connection *conn)
     while (total_sent < conn->send_len) {
         bytes_sent = send(conn->sockfd, conn->send_buffer + total_sent, conn->send_len - total_sent, 0);
         if (bytes_sent < 0) {
-            dlog(LOG_ERR, "Error in communication from: %s\n", abuffer);
-            connection_remove(conn);
-            return conn->state;
-        }
-        if (bytes_sent == 0) {
-            dlog(LOG_INFO, "Connection closed from: %s\n", abuffer);
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+				continue;
+
             connection_remove(conn);
             return conn->state;
         }
