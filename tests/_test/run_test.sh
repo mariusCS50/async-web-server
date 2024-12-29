@@ -11,7 +11,7 @@ LOG_FILE=test.log
 WGET_LOG=wget.log
 
 # Enable/disable cleanup (yes/no)
-DO_CLEANUP=yes
+DO_CLEANUP=no
 
 max_points=90
 
