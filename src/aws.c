@@ -109,13 +109,6 @@ struct connection *connection_create(int sockfd)
 	return conn;
 }
 
-void connection_start_async_io(struct connection *conn)
-{
-	/* TODO: Start asynchronous operation (read from file).
-	 * Use io_submit(2) & friends for reading data asynchronously.
-	 */
-}
-
 void connection_remove(struct connection *conn)
 {
 	/* Remove connection from epoll and close it */
@@ -172,7 +165,7 @@ void receive_data(struct connection *conn)
 
 	ssize_t total_recieved = 0;
 
-	while (1) {
+	while (total_recieved < BUFSIZ) {
         bytes_recv = recv(conn->sockfd, conn->recv_buffer + total_recieved, BUFSIZ - total_recieved, 0);
         if (bytes_recv < 0) {
 			if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -231,18 +224,50 @@ int connection_open_file(struct connection *conn)
 	return 0;
 }
 
+void connection_start_async_io(struct connection *conn)
+{
+	/* Start asynchronous operation (read from file) */
+	io_prep_pread(conn->piocb[0], conn->fd, conn->send_buffer, BUFSIZ, 0);
+	io_set_eventfd(conn->piocb[0], conn->eventfd);
+	// dlog(LOG_DEBUG, "%d == %d\n", conn->eventfd, conn->piocb[0]->u.c.resfd);
+
+	io_submit(ctx, 1, conn->piocb);
+
+	u_int64_t rc;
+	read(conn->eventfd, rc, sizeof(rc));
+
+	dlog(LOG_DEBUG, "Reading chunk done\n");
+}
+
+
 void connection_complete_async_io(struct connection *conn)
 {
-	/* TODO: Complete asynchronous operation; operation returns successfully.
+	/* Complete asynchronous operation; operation returns successfully.
 	 * Prepare socket for sending.
 	 */
+	io_prep_pwrite(conn->piocb[0], conn->sockfd, conn->send_buffer, BUFSIZ, 0);
+	io_set_eventfd(conn->piocb[0], conn->eventfd);
+
+	io_submit(ctx, 1, conn->piocb);
+
+	u_int64_t rc;
+	read(conn->eventfd, rc, sizeof(rc));
 }
 
 int connection_send_dynamic(struct connection *conn)
 {
-	/* TODO: Read data asynchronously.
+	/* Read data asynchronously.
 	 * Returns 0 on success and -1 on error.
 	 */
+	conn->eventfd = eventfd(0, 0);
+	conn->piocb[0] = &conn->iocb;
+
+	conn->state = STATE_ASYNC_ONGOING;
+
+	connection_start_async_io(conn);
+	connection_complete_async_io(conn);
+
+	conn->state = STATE_DATA_SENT;
 	return 0;
 }
 
@@ -300,6 +325,7 @@ enum connection_state connection_send_static(struct connection *conn)
 	rc = w_epoll_remove_ptr(epollfd, conn->sockfd, conn);
 	DIE(rc == -1, "w_epoll_remove_ptr() error");
 
+	connection_remove(conn);
 	return STATE_DATA_SENT;
 }
 
@@ -317,10 +343,9 @@ int connection_send_data(struct connection *conn)
 
 	if (file_type == RESOURCE_TYPE_DYNAMIC) {
 		dlog(LOG_DEBUG, "Dynamic file\n");
-		//connection_send_dynamic(conn);
+		connection_send_dynamic(conn);
 	}
 
-	connection_remove(conn);
 	return 0;
 }
 
@@ -377,7 +402,7 @@ int connection_send_header(struct connection *conn)
     }
 
     dlog(LOG_DEBUG, "Header sent\n");
-    conn->state = STATE_HEADER_SENT;
+    conn->state = (conn->state == STATE_SENDING_404 ? STATE_404_SENT : STATE_HEADER_SENT);
 
     return 0;
 }
@@ -405,18 +430,24 @@ void handle_output(struct connection *conn)
 		case STATE_REQUEST_RECEIVED:
 			connection_prepare_header(conn);
 			break;
+		case STATE_SENDING_404:
+			connection_send_header(conn);
+			break;
 		case STATE_SENDING_HEADER:
 			connection_send_header(conn);
 			break;
-		case STATE_SENDING_404:
-			connection_send_header(conn);
+		case STATE_404_SENT:
 			connection_remove(conn);
 			break;
 		case STATE_HEADER_SENT:
 			connection_send_data(conn);
 			break;
-
-
+		case STATE_ASYNC_ONGOING:
+			//dlog(LOG_DEBUG, "async ongoing\n");
+			break;
+		case STATE_DATA_SENT:
+			connection_remove(conn);
+			break;
 	default:
 		printf("shouldn't get here %d\n", conn->state);
 		exit(1);
@@ -432,7 +463,6 @@ void handle_client(uint32_t event, struct connection *conn)
 		handle_input(conn);
 	else if (event & EPOLLOUT)
 		handle_output(conn);
-
 }
 
 int main(void)
