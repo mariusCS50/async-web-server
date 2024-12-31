@@ -59,12 +59,13 @@ struct connection {
 	/* buffers used for receiving messages */
 	char recv_buffer[BUFSIZ];
 	size_t recv_len;
+	size_t recv_pos;
 
 	/* Used for sending data (headers, 404 or data populated through async IO). */
 	char send_buffer[BUFSIZ];
 	size_t send_len;
 	size_t send_pos;
-	size_t file_pos;
+	off_t file_pos;
 	size_t async_read_len;
 
 	/* HTTP request path */
