@@ -81,7 +81,6 @@ static enum resource_type connection_get_resource_type(struct connection *conn)
 	/* Get resource type depending on request path/filename. Filename should
 	 * point to the static or dynamic folder.
 	 */
-
 	if (strstr(conn->request_path, "static"))
 		return RESOURCE_TYPE_STATIC;
 
@@ -224,48 +223,31 @@ int connection_open_file(struct connection *conn)
 	return 0;
 }
 
-void connection_start_async_io(struct connection *conn)
-{
-	/* Start asynchronous operation (read from file) */
-	io_prep_pread(conn->piocb[0], conn->fd, conn->send_buffer, BUFSIZ, 0);
-	io_set_eventfd(conn->piocb[0], conn->eventfd);
-	// dlog(LOG_DEBUG, "%d == %d\n", conn->eventfd, conn->piocb[0]->u.c.resfd);
-
-	io_submit(ctx, 1, conn->piocb);
-
-	u_int64_t rc;
-	read(conn->eventfd, rc, sizeof(rc));
-
-	dlog(LOG_DEBUG, "Reading chunk done\n");
-}
-
-
-void connection_complete_async_io(struct connection *conn)
-{
-	/* Complete asynchronous operation; operation returns successfully.
-	 * Prepare socket for sending.
-	 */
-	io_prep_pwrite(conn->piocb[0], conn->sockfd, conn->send_buffer, BUFSIZ, 0);
-	io_set_eventfd(conn->piocb[0], conn->eventfd);
-
-	io_submit(ctx, 1, conn->piocb);
-
-	u_int64_t rc;
-	read(conn->eventfd, rc, sizeof(rc));
-}
-
 int connection_send_dynamic(struct connection *conn)
 {
 	/* Read data asynchronously.
 	 * Returns 0 on success and -1 on error.
 	 */
-	conn->eventfd = eventfd(0, 0);
-	conn->piocb[0] = &conn->iocb;
+	struct io_event event;
+	u_int64_t rc;
 
 	conn->state = STATE_ASYNC_ONGOING;
+	conn->file_pos = 0;
 
-	connection_start_async_io(conn);
-	connection_complete_async_io(conn);
+	conn->piocb[0] = &conn->iocb;
+
+	while (conn->file_pos < conn->file_size) {
+		io_prep_pread(conn->piocb[0], conn->fd, conn->send_buffer, BUFSIZ, conn->file_pos);
+		io_submit(conn->ctx, 1, conn->piocb);
+		io_getevents(conn->ctx, 1, 100, &event, NULL);
+
+		io_prep_pwrite(conn->piocb[0], conn->sockfd, conn->send_buffer, BUFSIZ, 0);
+		io_submit(conn->ctx, 1, conn->piocb);
+		io_getevents(conn->ctx, 1, 100, &event, NULL);
+
+        conn->file_pos += BUFSIZ;
+    }
+
 
 	conn->state = STATE_DATA_SENT;
 	return 0;
@@ -352,16 +334,6 @@ int connection_send_data(struct connection *conn)
 int connection_prepare_header(struct connection *conn)
 {
 	/* Prepares the header to be sent based on the requested file */
-	ssize_t bytes_sent;
-	int rc;
-	char abuffer[64];
-
-	rc = get_peer_address(conn->sockfd, abuffer, 64);
-	if (rc < 0) {
-		connection_remove(conn);
-		return conn->state;
-	}
-
 	parse_header(conn);
 
 	if (connection_open_file(conn) == -1) {
@@ -500,7 +472,6 @@ int main(void)
 		 *   - new connection requests (on server socket)
 		 *   - socket communication (on connection sockets)
 		 */
-
 		if (rev.data.fd == listenfd) {
 			if (rev.events & EPOLLIN)
 				handle_new_connection();
